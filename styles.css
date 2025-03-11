@@ -1,12 +1,21 @@
+.task-container {
+    margin: 0 12px; /* Симметричные отступы слева и справа, совпадающие с padding .view-content */
+    display: flex; /* Перенесли flex из inline-стилей */
+    flex-direction: column;
+    gap: 15px;
+}
+
 .task-instance.card {
     border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
     padding: 15px;
-    margin-bottom: 15px;
+    margin: 0;
     background-color: var(--background-primary);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     width: 100%;
     box-sizing: border-box;
+    height: auto; /* Высота определяется содержимым */
+    flex-grow: 0; /* Не растягивается по высоте */
 }
 
 .task-header h3 {
@@ -75,4 +84,46 @@
 
 .task-button:hover {
     background-color: var(--background-modifier-hover);
+}
+
+.task-status .task-state-not_started {
+    color: gray;
+}
+
+.task-status .task-state-pending {
+    color: #007bff; /* Синий */
+    font-weight: bold;
+}
+
+.task-status .task-state-done {
+    color: #28a745; /* Зеленый, совпадает с .status-green */
+}
+
+.task-status .task-state-canceled {
+    color: #ff851b; /* Оранжевый */
+}
+
+.task-status .task-state-skipped {
+    color: #dc3545; /* Красный, совпадает с .status-red */
+}
+
+.task-filter {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.task-filter label {
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.task-filter select {
+    padding: 5px;
+    font-size: 0.9em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
 }
