@@ -23,6 +23,16 @@ export interface RepeatingTask {
 	enabled: boolean;
 }
 
+export interface SerializedTaskInstance {
+    id: string;
+    taskId: string;
+    activePeriod: {
+        start: string;
+        end: string;
+    };
+    status: "not_started" | "pending" | "done" | "canceled" | "skipped";
+}
+
 export class TaskInstance {
 	id: string;
 	task: RepeatingTask;
@@ -35,7 +45,7 @@ export class TaskInstance {
 		this.activePeriod = activePeriod;
 		this.status = "not_started"; // По умолчанию
 	}
-	toJSON(): any {
+	toJSON(): SerializedTaskInstance {
 		return {
 			id: this.id,
 			taskId: this.task.id, // Сохраняем только ID задачи, а не весь объект
@@ -47,7 +57,7 @@ export class TaskInstance {
 		};
 	}
 
-	static fromJSON(data: any, task: RepeatingTask): TaskInstance {
+	static fromJSON(data: SerializedTaskInstance, task: RepeatingTask): TaskInstance {
 		return new TaskInstance(
 			data.id,
 			task,

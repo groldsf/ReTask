@@ -5,6 +5,16 @@ import { Notificator } from './Notificator';
 import { BinarySearchTree } from '@datastructures-js/binary-search-tree';
 import cronParser from 'cron-parser';
 
+interface StoredTaskInstance {
+    id: string;
+    taskId: string;
+    activePeriod: {
+        start: string;
+        end: string;
+    };
+    status: "not_started" | "pending" | "done" | "canceled" | "skipped";
+}
+
 /**
  * Управляет повторяющимися задачами: загрузка, генерация инстансов, их активация и хранение.
  */
@@ -136,7 +146,7 @@ export class TaskManager {
      * Сохраняет все инстансы задач в хранилище плагина.
      */
     async saveInstancesToStorage(): Promise<void> {
-        const instancesToSave: any[] = [];
+        const instancesToSave: StoredTaskInstance[] = [];
         this.tasks.forEach(task => {
             task.instances.forEach(instance => {
                 instancesToSave.push(instance.toJSON());
@@ -153,8 +163,8 @@ export class TaskManager {
         const data = await this.plugin.loadData();
         if (!data || !data.repeatingTaskInstances) return;
 
-        const instances = data.repeatingTaskInstances;
-        instances.forEach((storedInstance: any) => {
+        const instances = data.repeatingTaskInstances as StoredTaskInstance[];
+        instances.forEach((storedInstance: StoredTaskInstance) => {
             const task = this.tasks.find(t => t.id === storedInstance.taskId);
             if (!task) return;
 

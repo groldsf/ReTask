@@ -19,11 +19,11 @@ export default class ReTaskPlugin extends Plugin {
     await this.taskManager.loadTasks();
 
     // Устанавливаем таймер для генерации инстансов каждые 23 часа
-    const weekInMs = (24-1) * 60 * 60 * 1000;
+    const intervalInMs = (24-1) * 60 * 60 * 1000;
     this.instanceGeneratorIntervalId = setInterval(async () => {
       Notificator.debug('Weekly task instance generation triggered');
       await this.taskManager.generateNextInstancesForTasks();
-    }, weekInMs);
+    }, intervalInMs);
 
     // Регистрируем кастомное вью
     this.registerView(VIEW_TYPE_REPEATING_TASKS, (leaf) => new RepeatingTasksView(leaf, this.taskManager));

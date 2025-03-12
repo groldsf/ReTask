@@ -3,6 +3,15 @@ import { CachedMetadata, TFile } from "obsidian";
 import cronParser from 'cron-parser';
 import { Notificator } from "./Notificator";
 
+type PresetSchedule = 'daily' | 'weekly' | 'monthly';
+type CronSchedule = string;
+type IntervalSchedule = {
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+};
+
 export class TaskParser {
 
     parseTask(file: TFile, cache: CachedMetadata): RepeatingTask | null {
@@ -41,7 +50,7 @@ export class TaskParser {
         return task as RepeatingTask;
     }
 
-    private parseSchedule(rawSchedule: any): Schedule {
+    private parseSchedule(rawSchedule: PresetSchedule | CronSchedule | IntervalSchedule): Schedule {
         if (typeof rawSchedule === 'string') {
             if (['daily', 'weekly', 'monthly'].includes(rawSchedule)) {
                 Notificator.debug(`Parsed as preset: ${rawSchedule}`);
