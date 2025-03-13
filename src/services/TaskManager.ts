@@ -4,6 +4,7 @@ import { TaskParser } from './TaskParser';
 import { Notificator } from './Notificator';
 import { BinarySearchTree } from '@datastructures-js/binary-search-tree';
 import cronParser from 'cron-parser';
+import { TaskScheduler } from './TaskScheduler';
 
 interface StoredTaskInstance {
     id: string;
@@ -28,6 +29,10 @@ export class TaskManager {
     private app: App;
     private plugin: Plugin;
 
+    private scheduler: TaskScheduler;
+    private lastRunTime: Date;
+    private updateFrequencyMinutes: number = 15; // Частота обновления в минутах
+
     /**
      * Конструктор TaskManager.
      * @param app - Экземпляр приложения Obsidian для доступа к vault и metadata.
@@ -37,6 +42,8 @@ export class TaskManager {
         this.app = app;
         this.plugin = plugin;
         this.parser = new TaskParser();
+        this.scheduler = new TaskScheduler();
+        this.lastRunTime = new Date(0); // Начальное значение - "эпоха"
         this.futureInstances = new BinarySearchTree<TaskInstance>(
             (a, b) => a.activePeriod.start.getTime() - b.activePeriod.start.getTime()
         );
@@ -68,23 +75,82 @@ export class TaskManager {
             }
         }
         await this.loadInstancesFromStorageToTask();
-        await this.generateNextInstancesForTasks();
+        await this.loadLastRunTime();
+        await this.updateAllTaskInstances();
     }
 
-    generateNextInstancesForTasks() {
-        Notificator.debug("start generateNextInstancesForTasks")
-        this.tasks.forEach(task => {
-            const newInstances = this.generateNextInstancesForTask(task);
-            newInstances.forEach(instance => {
-                this.allInstances.set(instance.id, instance);
-                task.instances.push(instance);
-                if (instance.status === 'not_started' && instance.activePeriod.start > new Date()) {
-                    this.futureInstances.insert(instance);
-                } else if (instance.status === 'pending') {
-                    this.activeInstances.insert(instance);
+    /**
+     * Обновляет все инстансы задач, включая те, которые должны были быть созданы,
+     * пока Obsidian был выключен
+     */
+    async updateAllTaskInstances(): Promise<void> {
+        const currentTime = new Date();
+        let hasChanges = false;
+
+        Notificator.debug(`Обновление инстансов задач. Последний запуск: ${this.lastRunTime.toISOString()}`);
+
+        for (const task of this.tasks) {
+            if (!task.enabled) continue;
+
+            // Генерируем инстансы с момента последнего запуска
+            const newInstances = this.scheduler.generateTaskInstances(
+                task,
+                this.lastRunTime,
+                currentTime,
+                this.updateFrequencyMinutes
+            );
+
+            if (newInstances.length > 0) {
+                Notificator.debug(`Создано ${newInstances.length} новых инстансов для задачи ${task.name}`);
+
+                // Добавляем новые инстансы в соответствующие коллекции
+                for (const instance of newInstances) {
+                    // Проверяем, не существует ли уже инстанс с таким ID
+                    if (!this.allInstances.has(instance.id)) {
+                        this.allInstances.set(instance.id, instance);
+                        task.instances.push(instance);
+
+                        // Распределяем по коллекциям в зависимости от статуса
+                        if (instance.status === 'not_started' && instance.activePeriod.start > currentTime) {
+                            this.futureInstances.insert(instance);
+                        } else if (instance.status === 'pending') {
+                            this.activeInstances.insert(instance);
+                        }
+
+                        hasChanges = true;
+                    }
                 }
-            });
-        });
+            }
+        }
+        // Сохраняем изменения, если были добавлены новые инстансы
+        if (hasChanges) {
+            await this.saveInstancesToStorage();
+        }
+
+        // Обновляем время последнего запуска
+        this.lastRunTime = currentTime;
+
+        // Сохраняем время последнего запуска
+        await this.saveLastRunTime();
+    }
+
+    /**
+     * Сохраняет время последнего запуска в хранилище
+     */
+    private async saveLastRunTime(): Promise<void> {
+        const data = await this.plugin.loadData() || {};
+        data.lastRunTime = this.lastRunTime.toISOString();
+        await this.plugin.saveData(data);
+    }
+
+    /**
+     * Загружает время последнего запуска из хранилища
+     */
+    private async loadLastRunTime(): Promise<void> {
+        const data = await this.plugin.loadData();
+        if (data && data.lastRunTime) {
+            this.lastRunTime = new Date(data.lastRunTime);
+        }
     }
 
     /**
@@ -187,6 +253,21 @@ export class TaskManager {
     }
 
     /**
+     * Возвращает частоту обновления в минутах
+     */
+    getUpdateFrequencyMinutes(): number {
+        return this.updateFrequencyMinutes;
+    }
+
+     /**
+     * Выгружает менеджер, очищая ресурсы.
+     */
+     async onunload(): Promise<void> {
+        // Сохраняем инстансы перед выгрузкой
+        await this.saveInstancesToStorage();
+    }
+
+    /**
      * Вычисляет статус просрочки инстанса на основе текущего времени и порогов.
      * @param taskInstance - Инстанс для проверки.
      * @returns Статус просрочки ("green", "yellow", "red", "black").
@@ -205,88 +286,4 @@ export class TaskManager {
         return "black";
     }
 
-    /**
-     * Выгружает менеджер, очищая ресурсы.
-     */
-    async onunload(): Promise<void> {
-        this.app.workspace.detachLeavesOfType('repeating-tasks-view');
-        await this.clearStorage();
-    }
-
-    /**
-     * Генерирует следующие инстансы для задачи на неделю вперед от текущей даты,
-     * начиная с последнего существующего инстанса.
-     * @param task - Задача, для которой создаются инстансы.
-     * @returns Массив созданных TaskInstance.
-     */
-    private generateNextInstancesForTask(task: RepeatingTask): TaskInstance[] {
-        Notificator.debug(`Generating instances for task: ${task.name}, schedule: ${JSON.stringify(task.schedule)}`);
-        const instances: TaskInstance[] = [];
-        const today = new Date();
-        const weekAhead = new Date(today.getTime() + 24 * 60 * 60 * 1000); // +24 часа
-
-        // Определяем точку старта: последний инстанс или startTime
-        const existingInstances = task.instances.sort((a, b) => 
-            a.activePeriod.start.getTime() - b.activePeriod.start.getTime()
-        );
-        const lastInstanceStart = existingInstances.length > 0 
-            ? existingInstances[existingInstances.length - 1].activePeriod.start 
-            : task.startTime;
-        let current = new Date(lastInstanceStart);
-
-        if (task.schedule.type === 'preset') {
-            while (current <= weekAhead) {
-                const instanceId = this.getNewTaskInstanceId(task, current);
-                if (!this.allInstances.has(instanceId)) {
-                    const instance = this.createTaskInstanceFromTask(task, new Date(current));
-                    instances.push(instance);
-                }
-                switch (task.schedule.value) {
-                    case 'daily':
-                        current.setUTCDate(current.getUTCDate() + 1);
-                        break;
-                    case 'weekly':
-                        current.setUTCDate(current.getUTCDate() + 7);
-                        break;
-                    case 'monthly':
-                        current.setUTCMonth(current.getUTCMonth() + 1);
-                        break;
-                }
-            }
-        } else if (task.schedule.type === 'interval') {
-            const interval = task.schedule.value as { days: number; hours: number; minutes: number; seconds: number };
-            const intervalMs = (interval.days * 86400000) +
-                (interval.hours * 3600000) +
-                (interval.minutes * 60000) +
-                (interval.seconds * 1000);
-            if (intervalMs === 0) throw new Error(`Invalid interval for task ${task.id}: zero duration`);
-            while (current <= weekAhead) {
-                const instanceId = this.getNewTaskInstanceId(task, current);
-                if (!this.allInstances.has(instanceId)) {
-                    const instance = this.createTaskInstanceFromTask(task, new Date(current));
-                    instances.push(instance);
-                }
-                current = new Date(current.getTime() + intervalMs);
-            }
-        } else if (task.schedule.type === 'cron') {
-            Notificator.debug(`Start generate by cron`);
-            const cronInterval = cronParser.parse(task.schedule.value as string, {
-                currentDate: current,
-                tz: 'UTC'
-            });
-            let nextDate = cronInterval.next();
-            while (nextDate.toDate() <= weekAhead) {
-                const instanceId = this.getNewTaskInstanceId(task, nextDate.toDate());
-                if (!this.allInstances.has(instanceId)) {
-                    const instance = this.createTaskInstanceFromTask(task, new Date(nextDate.toDate()));
-                    instances.push(instance);
-                }
-                nextDate = cronInterval.next();
-            }
-        } else {
-            throw new Error(`Unknown schedule type for task ${task.name}: ${JSON.stringify(task.schedule)}`);
-        }
-
-        return instances;
-    }
 }

@@ -8,7 +8,6 @@ export default class ReTaskPlugin extends Plugin {
   // Папка с файлами задач (относительно корня vault)
   taskFolder: string = "RepeatingTasks";
   taskManager: TaskManager = new TaskManager(this.app, this);
-  instanceGeneratorIntervalId: NodeJS.Timer;
 
   async onload() {
     Notificator.setDebugMode(true);
@@ -18,12 +17,14 @@ export default class ReTaskPlugin extends Plugin {
 
     await this.taskManager.loadTasks();
 
-    // Устанавливаем таймер для генерации инстансов каждые 23 часа
-    const intervalInMs = (24-1) * 60 * 60 * 1000;
-    this.instanceGeneratorIntervalId = setInterval(async () => {
-      Notificator.debug('Weekly task instance generation triggered');
-      await this.taskManager.generateNextInstancesForTasks();
-    }, intervalInMs);
+    // Устанавливаем интервал для обновления инстансов задач
+    // Используем значение из TaskManager для согласованности
+    this.registerInterval(
+      window.setInterval(
+        () => this.taskManager.updateAllTaskInstances(),
+        this.taskManager.getUpdateFrequencyMinutes() * 60 * 1000
+      )
+    );
 
     // Регистрируем кастомное вью
     this.registerView(VIEW_TYPE_REPEATING_TASKS, (leaf) => new RepeatingTasksView(leaf, this.taskManager));
@@ -47,11 +48,10 @@ export default class ReTaskPlugin extends Plugin {
 
   async onunload() {
     Notificator.debug("Выгрузка плагина Повторяющихся Задач");
-    if (this.instanceGeneratorIntervalId) {
-      clearInterval(this.instanceGeneratorIntervalId); // Очищаем таймер при выгрузке
-      this.instanceGeneratorIntervalId = null;
-    }
+
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_REPEATING_TASKS);
+    await this.taskManager.onunload();
+    //временный сброс данных при разработке плагина. обязательно убрать в релизе.
     this.taskManager.clearStorage();
   }
 
