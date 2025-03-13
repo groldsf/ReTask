@@ -125,7 +125,7 @@ export class TaskManager {
         }
 
         // Обновляем статусы существующих инстансов
-        await this.updateInstanceStatuses();
+        await this.updateInstanceStatuses(false);
 
         // Сохраняем изменения, если были добавлены новые инстансы
         if (hasChanges) {
@@ -199,7 +199,7 @@ export class TaskManager {
      * @param taskInstance - Инстанс, который нужно отметить.
      * @param status - Новый статус ("pending", "done", "canceled", "skipped").
      */
-    async markTask(taskInstance: TaskInstance, status: "pending" | "done" | "canceled" | "skipped"): Promise<void> {
+    async markTask(taskInstance: TaskInstance, status: "pending" | "done" | "canceled" | "skipped", saveToStorage: Boolean = true): Promise<void> {
         const oldStatus = taskInstance.status;
         taskInstance.setStatus(status);
 
@@ -209,20 +209,26 @@ export class TaskManager {
             this.futureInstances.remove(taskInstance);
             this.activeInstances.insert(taskInstance);
         }
-        await this.saveInstancesToStorage();
+        if (saveToStorage) {
+            await this.saveInstancesToStorage();
+        }
     }
 
     /**
      * Сохраняет все инстансы задач в хранилище плагина.
      */
     async saveInstancesToStorage(): Promise<void> {
+        Notificator.debug(`Saving ${this.allInstances.size} instances to storage`);
         const instancesToSave: StoredTaskInstance[] = [];
         this.tasks.forEach(task => {
             task.instances.forEach(instance => {
                 instancesToSave.push(instance.toJSON());
             });
         });
-        await this.plugin.saveData({ repeatingTaskInstances: instancesToSave });
+        await this.plugin.saveData({ 
+            lastRunTime: this.lastRunTime.toISOString(),
+            repeatingTaskInstances: instancesToSave 
+        });
     }
 
     /**
@@ -296,8 +302,7 @@ export class TaskManager {
      * - Перемещает будущие инстансы в активные, когда наступает их время
      * - Автоматически обновляет статусы просроченных инстансов
      */
-    async updateInstanceStatuses(): Promise<void> {
-        Notificator.debug("Обновление статусов инстансов задач");
+    async updateInstanceStatuses(saveToStorage: Boolean = true): Promise<void> {
         let hasChanges = false;
 
         // Обработка будущих инстансов, которые должны стать активными
@@ -306,17 +311,17 @@ export class TaskManager {
             (node: BinarySearchTreeNode<TaskInstance>) => {
                 let instance = node.getValue();
                 if (instance.isStarted()) {
-                    this.markTask(instance, "pending");
+                    this.markTask(instance, "pending", false);
                     hasChanges = true;
                 } else {
                     lastInstanceIsStarted = false;
                 }
-            }, 
+            },
             () => {
                 return !lastInstanceIsStarted;
             }
         );
-
+        
         // Обработка активных инстансов
         let lastInstanceIsOverdue = true;
         this.activeInstances.traverseInOrder(
@@ -328,7 +333,7 @@ export class TaskManager {
                 }
                 // Проверяем, не просрочен ли инстанс
                 if (instance.isOverdue()) {
-                    this.markTask(instance, "skipped");
+                    this.markTask(instance, "skipped", false);
                     hasChanges = true;
                 }
             },
@@ -336,9 +341,8 @@ export class TaskManager {
                 return !lastInstanceIsOverdue;
             }
         );
-
         // Сохраняем изменения, если были
-        if (hasChanges) {
+        if (hasChanges && saveToStorage) {
             await this.saveInstancesToStorage();
         }
     }
