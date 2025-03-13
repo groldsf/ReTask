@@ -3,7 +3,6 @@ import { RepeatingTask, TaskInstance, getEndDate } from "../models/RepeatingTask
 import { TaskParser } from './TaskParser';
 import { Notificator } from './Notificator';
 import { BinarySearchTree } from '@datastructures-js/binary-search-tree';
-import cronParser from 'cron-parser';
 import { TaskScheduler } from './TaskScheduler';
 
 interface StoredTaskInstance {
@@ -87,12 +86,12 @@ export class TaskManager {
         const currentTime = new Date();
         let hasChanges = false;
 
-        Notificator.debug(`Обновление инстансов задач. Последний запуск: ${this.lastRunTime.toISOString()}`);
+        Notificator.debug(`Updating task instances. Last run: ${this.lastRunTime.toISOString()}`);
 
         for (const task of this.tasks) {
             if (!task.enabled) continue;
 
-            // Генерируем инстансы с момента последнего запуска
+            // Generate instances since last run
             const newInstances = this.scheduler.generateTaskInstances(
                 task,
                 this.lastRunTime,
@@ -101,16 +100,14 @@ export class TaskManager {
             );
 
             if (newInstances.length > 0) {
-                Notificator.debug(`Создано ${newInstances.length} новых инстансов для задачи ${task.name}`);
+                Notificator.debug(`Created ${newInstances.length} new instances for task ${task.name}`);
 
-                // Добавляем новые инстансы в соответствующие коллекции
+                // Add new instances to collections
                 for (const instance of newInstances) {
-                    // Проверяем, не существует ли уже инстанс с таким ID
                     if (!this.allInstances.has(instance.id)) {
                         this.allInstances.set(instance.id, instance);
                         task.instances.push(instance);
 
-                        // Распределяем по коллекциям в зависимости от статуса
                         if (instance.status === 'not_started' && instance.activePeriod.start > currentTime) {
                             this.futureInstances.insert(instance);
                         } else if (instance.status === 'pending') {
@@ -122,16 +119,18 @@ export class TaskManager {
                 }
             }
         }
-        // Сохраняем изменения, если были добавлены новые инстансы
+
+        // Save changes if new instances were added
         if (hasChanges) {
             await this.saveInstancesToStorage();
         }
 
-        // Обновляем время последнего запуска
+        // Update last run time
         this.lastRunTime = currentTime;
-
-        // Сохраняем время последнего запуска
         await this.saveLastRunTime();
+
+        // Update instance statuses separately
+        await this.updateInstanceStatuses();
     }
 
     /**
@@ -284,6 +283,42 @@ export class TaskManager {
         if (diff <= thresholds.yellow * 60 * 1000) return "yellow";
         if (diff <= thresholds.red * 60 * 1000) return "red";
         return "black";
+    }
+
+    /**
+     * Updates the status of task instances based on their active periods and thresholds.
+     * This is separated from instance creation logic for better maintainability.
+     */
+    private async updateInstanceStatuses(): Promise<void> {
+        const currentTime = new Date();
+        let hasStatusChanges = false;
+
+        // Check future instances that should now be active
+        const futureNodes = this.futureInstances.traverseInOrder();
+        for (const node of futureNodes) {
+            const instance = node.getValue();
+            if (instance.activePeriod.start <= currentTime) {
+                this.futureInstances.remove(instance);
+                instance.setStatus('pending');
+                this.activeInstances.insert(instance);
+                hasStatusChanges = true;
+            }
+        }
+
+        // Check active instances for overdue status
+        const activeNodes = this.activeInstances.traverseInOrder();
+        for (const node of activeNodes) {
+            const instance = node.getValue();
+            const overdueStatus = this.computeOverdueStatus(instance);
+            if (overdueStatus !== instance.overdueStatus) {
+                instance.overdueStatus = overdueStatus;
+                hasStatusChanges = true;
+            }
+        }
+
+        if (hasStatusChanges) {
+            await this.saveInstancesToStorage();
+        }
     }
 
 }
