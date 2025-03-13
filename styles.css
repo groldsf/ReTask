@@ -1,129 +1,51 @@
-.task-container {
-    margin: 0 12px; /* Симметричные отступы слева и справа, совпадающие с padding .view-content */
-    display: flex; /* Перенесли flex из inline-стилей */
-    flex-direction: column;
-    gap: 15px;
+.task-filter {
+    position: relative;
+    margin-bottom: 10px;
 }
 
-.task-instance.card {
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    padding: 15px;
-    margin: 0;
-    background-color: var(--background-primary);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+.autocomplete-container {
+    position: absolute;
     width: 100%;
-    box-sizing: border-box;
-    height: auto; /* Высота определяется содержимым */
-    flex-grow: 0; /* Не растягивается по высоте */
+    z-index: 1000;
 }
 
-.task-header h3 {
-    margin: 0 0 5px 0;
-    font-size: 1.2em;
-    color: var(--text-normal);
-}
-
-.task-description {
-    margin: 0 0 10px 0;
-    font-size: 0.9em;
-    color: var(--text-muted);
-}
-
-.task-dates {
-    margin: 10px 0;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-.task-date {
-    font-size: 0.85em;
-    color: var(--text-accent);
-}
-
-.task-status {
-    margin: 10px 0;
-}
-
-.task-status .status-green {
-    color: #28a745;
-}
-
-.task-status .status-yellow {
-    color: #ffc107;
-}
-
-.task-status .status-red {
-    color: #dc3545;
-}
-
-.task-status .status-black {
-    color: #333;
-}
-
-.task-actions {
-    display: flex;
-    flex-wrap: wrap; /* Кнопки переносятся, если не помещаются */
-    gap: 10px;
-    justify-content: flex-start;
-}
-
-.task-button {
-    padding: 5px 10px;
-    font-size: 0.9em;
-    background-color: var(--background-secondary);
+.suggestions-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     border: 1px solid var(--background-modifier-border);
     border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-    flex: 1 1 80px; /* Минимальная ширина 80px, растягивается на доступное место */
-    box-sizing: border-box;
-    text-align: center; /* Выравнивание текста по центру */
+    background-color: var(--background-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    max-height: 200px;
+    overflow-y: auto;
 }
 
-.task-button:hover {
+.suggestions-list li {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.suggestions-list li:hover {
     background-color: var(--background-modifier-hover);
 }
 
-.task-status .task-state-not_started {
-    color: gray;
+.suggestions-list li.selected {
+    background-color: var(--background-modifier-hover);
 }
 
-.task-status .task-state-pending {
-    color: #007bff; /* Синий */
-    font-weight: bold;
-}
-
-.task-status .task-state-done {
-    color: #28a745; /* Зеленый, совпадает с .status-green */
-}
-
-.task-status .task-state-canceled {
-    color: #ff851b; /* Оранжевый */
-}
-
-.task-status .task-state-skipped {
-    color: #dc3545; /* Красный, совпадает с .status-red */
-}
-
-.task-filter {
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.task-filter label {
-    font-size: 0.9em;
-    color: var(--text-muted);
-}
-
-.task-filter select {
-    padding: 5px;
-    font-size: 0.9em;
+#name-filter {
+    width: 100%;
+    padding: 6px 8px;
     border: 1px solid var(--background-modifier-border);
     border-radius: 4px;
-    background-color: var(--background-secondary);
+    background-color: var(--background-primary);
     color: var(--text-normal);
+}
+
+#name-filter:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--background-modifier-border);
 }
