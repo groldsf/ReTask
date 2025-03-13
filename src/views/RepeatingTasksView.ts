@@ -11,6 +11,9 @@ export class RepeatingTasksView extends ItemView {
     taskManager: TaskManager;
     container: HTMLElement;
     filterStatus: string = 'all'; // По умолчанию показываем все задачи
+    filterName: string = ''; // Фильтр по имени задачи
+    currentPage: number = 1; // Текущая страница
+    itemsPerPage: number = 10; // Количество задач на странице
 
     constructor(leaf: WorkspaceLeaf, taskManager: TaskManager) {
         super(leaf);
@@ -33,9 +36,129 @@ export class RepeatingTasksView extends ItemView {
     async render() {
         this.container.empty();
         this.container.createEl('h2', { text: 'Повторяющиеся задачи' });
+        
+        // Контейнер для настроек отображения
+        const settingsContainer = this.container.createDiv({ cls: 'task-settings-container' });
+
+        // Добавляем фильтр по имени задачи
+        const nameFilterContainer = settingsContainer.createDiv({ cls: 'task-filter' });
+        nameFilterContainer.createEl('label', { text: 'Поиск по имени: ', attr: { for: 'name-filter' } });
+        const nameInput = nameFilterContainer.createEl('input', { 
+            attr: { 
+                id: 'name-filter',
+                type: 'text',
+                placeholder: 'Введите имя задачи...',
+                value: this.filterName
+            }
+        });
+
+        // Создаем контейнер для автокомплита
+        const autocompleteContainer = nameFilterContainer.createDiv({ cls: 'autocomplete-container' });
+        const suggestionsList = autocompleteContainer.createEl('ul', { cls: 'suggestions-list' });
+        suggestionsList.style.display = 'none';
+
+        let currentSuggestions: string[] = [];
+        let selectedIndex = -1;
+
+        // Функция для обновления списка предложений
+        const updateSuggestions = async () => {
+            const input = nameInput.value.toLowerCase();
+            const taskInstances = await this.taskManager.getTaskInstances();
+            const uniqueTaskNames = new Set(taskInstances.map(instance => instance.task.name));
+            
+            currentSuggestions = Array.from(uniqueTaskNames)
+                .filter(name => name.toLowerCase().includes(input))
+                .slice(0, 5); // Ограничиваем количество предложений
+
+            suggestionsList.empty();
+            selectedIndex = -1;
+
+            if (currentSuggestions.length > 0 && input) {
+                currentSuggestions.forEach((suggestion, index) => {
+                    const li = suggestionsList.createEl('li', { text: suggestion });
+                    li.onclick = () => {
+                        nameInput.value = suggestion;
+                        this.filterName = suggestion;
+                        this.currentPage = 1;
+                        suggestionsList.style.display = 'none';
+                        this.render();
+                    };
+                });
+                suggestionsList.style.display = 'block';
+            } else {
+                suggestionsList.style.display = 'none';
+            }
+        };
+
+        // Обработчик ввода
+        nameInput.oninput = () => {
+            updateSuggestions();
+        };
+
+        // Обработчик клавиш для навигации
+        nameInput.onkeydown = (event) => {
+            const suggestions = suggestionsList.querySelectorAll('li');
+
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    if (selectedIndex < suggestions.length - 1) {
+                        if (selectedIndex >= 0) {
+                            suggestions[selectedIndex].classList.remove('selected');
+                        }
+                        selectedIndex++;
+                        suggestions[selectedIndex].classList.add('selected');
+                    }
+                    break;
+
+                case 'ArrowUp':
+                    event.preventDefault();
+                    if (selectedIndex > 0) {
+                        suggestions[selectedIndex].classList.remove('selected');
+                        selectedIndex--;
+                        suggestions[selectedIndex].classList.add('selected');
+                    }
+                    break;
+
+                case 'Enter':
+                    if (selectedIndex >= 0 && currentSuggestions[selectedIndex]) {
+                        event.preventDefault();
+                        nameInput.value = currentSuggestions[selectedIndex];
+                        this.filterName = currentSuggestions[selectedIndex];
+                        this.currentPage = 1;
+                        suggestionsList.style.display = 'none';
+                        this.render();
+                    } else {
+                        this.filterName = nameInput.value;
+                        this.currentPage = 1;
+                        suggestionsList.style.display = 'none';
+                        this.render();
+                    }
+                    break;
+
+                case 'Escape':
+                    suggestionsList.style.display = 'none';
+                    selectedIndex = -1;
+                    break;
+            }
+        };
+
+        // Скрываем список при клике вне
+        document.addEventListener('click', (event) => {
+            if (!nameFilterContainer.contains(event.target as Node)) {
+                suggestionsList.style.display = 'none';
+            }
+        });
+        nameInput.onkeydown = (event) => {
+            if (event.key === 'Enter') {
+                this.filterName = nameInput.value;
+                this.currentPage = 1; // Сбрасываем на первую страницу при изменении фильтра
+                this.render();
+            }
+        };
 
         // Добавляем фильтр по статусу
-        const filterContainer = this.container.createDiv({ cls: 'task-filter' });
+        const filterContainer = settingsContainer.createDiv({ cls: 'task-filter' });
         filterContainer.createEl('label', { text: 'Фильтр по статусу: ', attr: { for: 'status-filter' } });
         const select = filterContainer.createEl('select', { attr: { id: 'status-filter' } });
         select.createEl('option', { text: 'Все', attr: { value: 'all' } });
@@ -52,10 +175,35 @@ export class RepeatingTasksView extends ItemView {
 
         // Получаем и фильтруем инстансы
         const taskInstances = await this.taskManager.getTaskInstances();
-        const filteredInstances = this.filterStatus === 'all' 
-            ? taskInstances 
-            : taskInstances.filter(task => task.status === this.filterStatus);
+        let filteredInstances = taskInstances;
+        
+        // Применяем фильтр по статусу
+        if (this.filterStatus !== 'all') {
+            filteredInstances = filteredInstances.filter(task => task.status === this.filterStatus);
+        }
+        
+        // Применяем фильтр по имени
+        if (this.filterName.trim()) {
+            const searchTerm = this.filterName.toLowerCase().trim();
+            filteredInstances = filteredInstances.filter(task => 
+                task.task.name.toLowerCase().includes(searchTerm)
+            );
+        }
 
+        // Добавляем настройку количества задач на странице
+        const paginationContainer = settingsContainer.createDiv({ cls: 'pagination-settings' });
+        paginationContainer.createEl('label', { text: 'Задач на странице: ', attr: { for: 'items-per-page' } });
+        const itemsSelect = paginationContainer.createEl('select', { attr: { id: 'items-per-page' } });
+        [5, 10, 20, 50, 100].forEach(num => {
+            itemsSelect.createEl('option', { text: `${num}`, attr: { value: `${num}` } });
+        });
+        itemsSelect.value = `${this.itemsPerPage}`;
+        itemsSelect.onchange = () => {
+            this.itemsPerPage = parseInt(itemsSelect.value);
+            this.currentPage = 1; // Сбрасываем на первую страницу при изменении количества элементов
+            this.render();
+        };
+        
         // Добавляем счетчик задач
         const taskCountContainer = this.container.createDiv({ cls: 'task-count-container' });
         if (this.filterStatus === 'all') {
@@ -71,10 +219,115 @@ export class RepeatingTasksView extends ItemView {
             this.container.createEl('p', { text: 'Задачи не найдены' });
             return;
         }
-
-        filteredInstances.forEach(task => {
+        
+        // Вычисляем пагинацию
+        const totalPages = Math.ceil(filteredInstances.length / this.itemsPerPage);
+        if (this.currentPage > totalPages) {
+            this.currentPage = totalPages;
+        }
+        
+        const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+        const endIndex = Math.min(startIndex + this.itemsPerPage, filteredInstances.length);
+        const currentPageInstances = filteredInstances.slice(startIndex, endIndex);
+        
+        // Отображаем текущую страницу и общее количество страниц
+        const paginationInfoEl = this.container.createDiv({ cls: 'pagination-info' });
+        paginationInfoEl.createEl('p', { 
+            text: `Страница ${this.currentPage} из ${totalPages} (показано ${currentPageInstances.length} из ${filteredInstances.length} задач)`,
+            cls: 'pagination-text'
+        });
+        
+        // Отображаем только задачи текущей страницы
+        currentPageInstances.forEach(task => {
             this.renderTask(task);
         });
+        
+        // Добавляем элементы навигации по страницам
+        if (totalPages > 1) {
+            const paginationEl = this.container.createDiv({ cls: 'pagination-controls' });
+            
+            // Кнопка "Предыдущая страница"
+            const prevBtn = paginationEl.createEl('button', { 
+                text: '← Предыдущая', 
+                cls: 'pagination-button' 
+            });
+            prevBtn.disabled = this.currentPage === 1;
+            prevBtn.onclick = () => {
+                if (this.currentPage > 1) {
+                    this.currentPage--;
+                    this.render();
+                }
+            };
+            
+            // Номера страниц
+            const pagesContainer = paginationEl.createDiv({ cls: 'pagination-pages' });
+            
+            // Определяем диапазон отображаемых номеров страниц
+            const maxVisiblePages = 5;
+            let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+            
+            if (endPage - startPage + 1 < maxVisiblePages) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+            
+            // Первая страница
+            if (startPage > 1) {
+                const firstPageBtn = pagesContainer.createEl('button', { 
+                    text: '1', 
+                    cls: 'pagination-page-button' 
+                });
+                firstPageBtn.onclick = () => {
+                    this.currentPage = 1;
+                    this.render();
+                };
+                
+                if (startPage > 2) {
+                    pagesContainer.createEl('span', { text: '...', cls: 'pagination-ellipsis' });
+                }
+            }
+            
+            // Номера страниц
+            for (let i = startPage; i <= endPage; i++) {
+                const pageBtn = pagesContainer.createEl('button', { 
+                    text: `${i}`, 
+                    cls: i === this.currentPage ? 'pagination-page-button current' : 'pagination-page-button' 
+                });
+                pageBtn.onclick = () => {
+                    this.currentPage = i;
+                    this.render();
+                };
+            }
+            
+            // Последняя страница
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    pagesContainer.createEl('span', { text: '...', cls: 'pagination-ellipsis' });
+                }
+                
+                const lastPageBtn = pagesContainer.createEl('button', { 
+                    text: `${totalPages}`, 
+                    cls: 'pagination-page-button' 
+                });
+                lastPageBtn.onclick = () => {
+                    this.currentPage = totalPages;
+                    this.render();
+                };
+            }
+            
+            // Кнопка "Следующая страница"
+            const nextBtn = paginationEl.createEl('button', { 
+                text: 'Следующая →', 
+                cls: 'pagination-button' 
+            });
+            nextBtn.disabled = this.currentPage === totalPages;
+            nextBtn.onclick = () => {
+                if (this.currentPage < totalPages) {
+                    this.currentPage++;
+                    this.render();
+                }
+            };
+        }
     }
 
     private renderTask(taskInstance: TaskInstance) {

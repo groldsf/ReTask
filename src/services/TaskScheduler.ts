@@ -4,7 +4,7 @@ import cronParser from 'cron-parser';
 
 export class TaskScheduler {
     // Минимальное количество дней для генерации вперед
-    private static MIN_LOOKAHEAD_DAYS = 7;
+    private static MIN_LOOKAHEAD_DAYS = 1;
     /**
      * Генерирует все инстансы задачи, которые должны были быть созданы с момента последнего запуска
      * @param task Задача для генерации инстансов
@@ -22,10 +22,10 @@ export class TaskScheduler {
         const instances: TaskInstance[] = [];
 
         // Динамически определяем период для генерации инстансов
-        // Минимум 7 дней или в 4 раза больше периода обновления (в днях)
+        // Минимум 1 день или в 4 раза больше периода обновления (в днях)
         const lookAheadDays = Math.max(
             TaskScheduler.MIN_LOOKAHEAD_DAYS,
-            (updateFrequencyMinutes * 4) / (60 * 24)
+            (updateFrequencyMinutes * 2) / (60 * 24)
         );
 
         Notificator.debug(`Generating instances for task ${task.name} with lookAhead of ${lookAheadDays} days`);

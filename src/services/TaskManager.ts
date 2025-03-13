@@ -2,7 +2,7 @@ import { App, Plugin, TFile } from 'obsidian';
 import { RepeatingTask, TaskInstance, getEndDate } from "../models/RepeatingTask";
 import { TaskParser } from './TaskParser';
 import { Notificator } from './Notificator';
-import { BinarySearchTree } from '@datastructures-js/binary-search-tree';
+import { BinarySearchTree, BinarySearchTreeNode } from '@datastructures-js/binary-search-tree';
 import { TaskScheduler } from './TaskScheduler';
 
 interface StoredTaskInstance {
@@ -86,12 +86,12 @@ export class TaskManager {
         const currentTime = new Date();
         let hasChanges = false;
 
-        Notificator.debug(`Updating task instances. Last run: ${this.lastRunTime.toISOString()}`);
+        Notificator.debug(`Обновление инстансов задач. Последний запуск: ${this.lastRunTime.toISOString()}`);
 
         for (const task of this.tasks) {
             if (!task.enabled) continue;
 
-            // Generate instances since last run
+            // Генерируем инстансы с момента последнего запуска
             const newInstances = this.scheduler.generateTaskInstances(
                 task,
                 this.lastRunTime,
@@ -100,37 +100,43 @@ export class TaskManager {
             );
 
             if (newInstances.length > 0) {
-                Notificator.debug(`Created ${newInstances.length} new instances for task ${task.name}`);
+                Notificator.debug(`Создано ${newInstances.length} новых инстансов для задачи ${task.name}`);
 
-                // Add new instances to collections
+                // Добавляем новые инстансы в соответствующие коллекции
                 for (const instance of newInstances) {
+                    // Проверяем, не существует ли уже инстанс с таким ID
                     if (!this.allInstances.has(instance.id)) {
                         this.allInstances.set(instance.id, instance);
                         task.instances.push(instance);
 
-                        if (instance.status === 'not_started' && instance.activePeriod.start > currentTime) {
+                        // Распределяем по коллекциям в зависимости от статуса
+                        if (instance.status === 'not_started') {
                             this.futureInstances.insert(instance);
                         } else if (instance.status === 'pending') {
                             this.activeInstances.insert(instance);
                         }
 
                         hasChanges = true;
+                    } else {
+                        Notificator.warn("duplicate instance.id", instance)
                     }
                 }
             }
         }
 
-        // Save changes if new instances were added
+        // Обновляем статусы существующих инстансов
+        await this.updateInstanceStatuses();
+
+        // Сохраняем изменения, если были добавлены новые инстансы
         if (hasChanges) {
             await this.saveInstancesToStorage();
         }
 
-        // Update last run time
+        // Обновляем время последнего запуска
         this.lastRunTime = currentTime;
-        await this.saveLastRunTime();
 
-        // Update instance statuses separately
-        await this.updateInstanceStatuses();
+        // Сохраняем время последнего запуска
+        await this.saveLastRunTime();
     }
 
     /**
@@ -204,7 +210,6 @@ export class TaskManager {
             this.activeInstances.insert(taskInstance);
         }
         await this.saveInstancesToStorage();
-        Notificator.info(`Task ${taskInstance.id} marked as ${status}`);
     }
 
     /**
@@ -258,10 +263,10 @@ export class TaskManager {
         return this.updateFrequencyMinutes;
     }
 
-     /**
-     * Выгружает менеджер, очищая ресурсы.
-     */
-     async onunload(): Promise<void> {
+    /**
+    * Выгружает менеджер, очищая ресурсы.
+    */
+    async onunload(): Promise<void> {
         // Сохраняем инстансы перед выгрузкой
         await this.saveInstancesToStorage();
     }
@@ -286,37 +291,54 @@ export class TaskManager {
     }
 
     /**
-     * Updates the status of task instances based on their active periods and thresholds.
-     * This is separated from instance creation logic for better maintainability.
+     * Обновляет статусы инстансов задач на основе текущего времени.
+     * Использует деревья futureInstances и activeInstances для эффективного доступа.
+     * - Перемещает будущие инстансы в активные, когда наступает их время
+     * - Автоматически обновляет статусы просроченных инстансов
      */
-    private async updateInstanceStatuses(): Promise<void> {
-        const currentTime = new Date();
-        let hasStatusChanges = false;
+    async updateInstanceStatuses(): Promise<void> {
+        Notificator.debug("Обновление статусов инстансов задач");
+        let hasChanges = false;
 
-        // Check future instances that should now be active
-        const futureNodes = this.futureInstances.traverseInOrder();
-        for (const node of futureNodes) {
-            const instance = node.getValue();
-            if (instance.activePeriod.start <= currentTime) {
-                this.futureInstances.remove(instance);
-                instance.setStatus('pending');
-                this.activeInstances.insert(instance);
-                hasStatusChanges = true;
+        // Обработка будущих инстансов, которые должны стать активными
+        let lastInstanceIsStarted = true;
+        this.futureInstances.traverseInOrder(
+            (node: BinarySearchTreeNode<TaskInstance>) => {
+                let instance = node.getValue();
+                if (instance.isStarted()) {
+                    this.markTask(instance, "pending");
+                    hasChanges = true;
+                } else {
+                    lastInstanceIsStarted = false;
+                }
+            }, 
+            () => {
+                return !lastInstanceIsStarted;
             }
-        }
+        );
 
-        // Check active instances for overdue status
-        const activeNodes = this.activeInstances.traverseInOrder();
-        for (const node of activeNodes) {
-            const instance = node.getValue();
-            const overdueStatus = this.computeOverdueStatus(instance);
-            if (overdueStatus !== instance.overdueStatus) {
-                instance.overdueStatus = overdueStatus;
-                hasStatusChanges = true;
+        // Обработка активных инстансов
+        let lastInstanceIsOverdue = true;
+        this.activeInstances.traverseInOrder(
+            (node: BinarySearchTreeNode<TaskInstance>) => {
+                let instance = node.getValue();
+                if (instance.status !== "pending") {
+                    lastInstanceIsOverdue = false;
+                    return;
+                }
+                // Проверяем, не просрочен ли инстанс
+                if (instance.isOverdue()) {
+                    this.markTask(instance, "skipped");
+                    hasChanges = true;
+                }
+            },
+            () => {
+                return !lastInstanceIsOverdue;
             }
-        }
+        );
 
-        if (hasStatusChanges) {
+        // Сохраняем изменения, если были
+        if (hasChanges) {
             await this.saveInstancesToStorage();
         }
     }
