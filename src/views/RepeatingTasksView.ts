@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
 import { TaskInstance } from '../models/RepeatingTask';
 import { TaskManager } from 'src/services/TaskManager';
+import { Notificator } from 'src/services/Notificator';
 
 export const VIEW_TYPE_REPEATING_TASKS = "repeating-tasks-view";
 
@@ -34,6 +35,7 @@ export class RepeatingTasksView extends ItemView {
     }
 
     async render() {
+        Notificator.debug('RepeatingTasksView.render start');
         this.container.empty();
         this.container.createEl('h2', { text: 'Повторяющиеся задачи' });
         
@@ -100,6 +102,17 @@ export class RepeatingTasksView extends ItemView {
             const suggestions = suggestionsList.querySelectorAll('li');
 
             switch (event.key) {
+                case 'Tab':
+                    if (currentSuggestions.length > 0) {
+                        event.preventDefault();
+                        const selectedSuggestion = selectedIndex >= 0 ? currentSuggestions[selectedIndex] : currentSuggestions[0];
+                        nameInput.value = selectedSuggestion;
+                        this.filterName = selectedSuggestion;
+                        this.currentPage = 1;
+                        suggestionsList.style.display = 'none';
+                        this.render();
+                    }
+                    break;
                 case 'ArrowDown':
                     event.preventDefault();
                     if (selectedIndex < suggestions.length - 1) {
@@ -149,13 +162,6 @@ export class RepeatingTasksView extends ItemView {
                 suggestionsList.style.display = 'none';
             }
         });
-        nameInput.onkeydown = (event) => {
-            if (event.key === 'Enter') {
-                this.filterName = nameInput.value;
-                this.currentPage = 1; // Сбрасываем на первую страницу при изменении фильтра
-                this.render();
-            }
-        };
 
         // Добавляем фильтр по статусу
         const filterContainer = settingsContainer.createDiv({ cls: 'task-filter' });
@@ -328,6 +334,7 @@ export class RepeatingTasksView extends ItemView {
                 }
             };
         }
+        Notificator.debug('RepeatingTasksView.render end');
     }
 
     private renderTask(taskInstance: TaskInstance) {
