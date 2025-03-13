@@ -2,6 +2,7 @@ import { Plugin } from 'obsidian';
 import { VIEW_TYPE_REPEATING_TASKS, RepeatingTasksView } from './views/RepeatingTasksView';
 import { TaskManager } from './services/TaskManager';
 import { Notificator } from './services/Notificator'
+import * as moment from 'moment';
 
 // Основной класс плагина
 export default class ReTaskPlugin extends Plugin {
@@ -22,9 +23,23 @@ export default class ReTaskPlugin extends Plugin {
     this.registerInterval(
       window.setInterval(
         () => this.taskManager.updateAllTaskInstances(),
-        this.taskManager.getUpdateFrequencyMinutes() * 60 * 1000
+        this.taskManager.getUpdateTaskFrequencyMinutes() * 60 * 1000
       )
     );
+    
+    const now = new Date();
+    const secondsPast = now.getSeconds() + now.getMilliseconds() / 1000; // Текущие секунды с миллисекундами
+    const delayToNextMinute = (60 - secondsPast) * 1000; // Миллисекунды до следующей минуты
+    // Первый запуск с выравниванием
+    window.setTimeout(() => {
+      this.taskManager.updateInstanceStatuses();
+      // Запускаем интервал для последующих выполнений
+      this.registerInterval(
+        window.setInterval(() => {
+          this.taskManager.updateInstanceStatuses();
+        }, 60000) // Каждые 60 секунд
+      );
+    }, delayToNextMinute);
 
     // Регистрируем кастомное вью
     this.registerView(VIEW_TYPE_REPEATING_TASKS, (leaf) => new RepeatingTasksView(leaf, this.taskManager));
@@ -72,5 +87,12 @@ export default class ReTaskPlugin extends Plugin {
       active: true,
     });
     this.app.workspace.revealLeaf(leaf);
+  }
+
+  async updateView() {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE_REPEATING_TASKS).forEach(leaf => {
+      const view = leaf.view as RepeatingTasksView;
+      view.render();
+    });
   }
 }

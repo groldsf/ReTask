@@ -4,6 +4,7 @@ import { TaskParser } from './TaskParser';
 import { Notificator } from './Notificator';
 import { BinarySearchTree, BinarySearchTreeNode } from '@datastructures-js/binary-search-tree';
 import { TaskScheduler } from './TaskScheduler';
+import ReTaskPlugin from 'src/main';
 
 interface StoredTaskInstance {
     id: string;
@@ -26,18 +27,19 @@ export class TaskManager {
     parser: TaskParser;
 
     private app: App;
-    private plugin: Plugin;
+    private plugin: ReTaskPlugin;
 
     private scheduler: TaskScheduler;
     private lastRunTime: Date;
-    private updateFrequencyMinutes: number = 15; // Частота обновления в минутах
+    private updateTaskFrequencyMinutes: number = 15; // Частота обновления задач в минутах
+    updateInstanceStatusMinute: number = 1;// Частота обновления статуса нистансов задач в минутах
 
     /**
      * Конструктор TaskManager.
      * @param app - Экземпляр приложения Obsidian для доступа к vault и metadata.
      * @param plugin - Экземпляр плагина для сохранения данных.
      */
-    constructor(app: App, plugin: Plugin) {
+    constructor(app: App, plugin: ReTaskPlugin) {
         this.app = app;
         this.plugin = plugin;
         this.parser = new TaskParser();
@@ -96,7 +98,7 @@ export class TaskManager {
                 task,
                 this.lastRunTime,
                 currentTime,
-                this.updateFrequencyMinutes
+                this.updateTaskFrequencyMinutes
             );
 
             if (newInstances.length > 0) {
@@ -263,10 +265,17 @@ export class TaskManager {
     }
 
     /**
-     * Возвращает частоту обновления в минутах
+     * Возвращает частоту обновления задач в минутах
      */
-    getUpdateFrequencyMinutes(): number {
-        return this.updateFrequencyMinutes;
+    getUpdateTaskFrequencyMinutes(): number {
+        return this.updateTaskFrequencyMinutes;
+    }
+
+    /**
+     * Возвращает частоту обновления статуса инстансов задач в минутах
+     */
+    getUpdateInstanceStatusMinute() {
+        return this.updateInstanceStatusMinute;
     }
 
     /**
@@ -303,6 +312,7 @@ export class TaskManager {
      * - Автоматически обновляет статусы просроченных инстансов
      */
     async updateInstanceStatuses(saveToStorage: Boolean = true): Promise<void> {
+        Notificator.debug(`Обновление статусов инстансов задач.`);
         let hasChanges = false;
 
         // Обработка будущих инстансов, которые должны стать активными
@@ -344,6 +354,10 @@ export class TaskManager {
         // Сохраняем изменения, если были
         if (hasChanges && saveToStorage) {
             await this.saveInstancesToStorage();
+        }
+        if (hasChanges) {
+            Notificator.debug(`Обновлены статусы инстансов задач.`);
+            this.plugin.updateView();
         }
     }
 
