@@ -56,6 +56,17 @@ export class RepeatingTasksView extends ItemView {
             ? taskInstances 
             : taskInstances.filter(task => task.status === this.filterStatus);
 
+        // Добавляем счетчик задач
+        const taskCountContainer = this.container.createDiv({ cls: 'task-count-container' });
+        if (this.filterStatus === 'all') {
+            taskCountContainer.createEl('p', { text: `Всего задач: ${taskInstances.length}`, cls: 'task-count' });
+        } else {
+            taskCountContainer.createEl('p', { 
+                text: `Показано ${filteredInstances.length} из ${taskInstances.length} задач`, 
+                cls: 'task-count' 
+            });
+        }
+
         if (filteredInstances.length === 0) {
             this.container.createEl('p', { text: 'Задачи не найдены' });
             return;
