@@ -205,10 +205,13 @@ export class TaskManager {
         const oldStatus = taskInstance.status;
         taskInstance.setStatus(status);
 
+        if (oldStatus === 'not_started') {
+            this.futureInstances.remove(taskInstance);
+        }
         if (oldStatus === 'pending' && status !== 'pending') {
             this.activeInstances.remove(taskInstance);
-        } else if (oldStatus !== 'pending' && status === 'pending') {
-            this.futureInstances.remove(taskInstance);
+        }
+        if (status === 'pending') {
             this.activeInstances.insert(taskInstance);
         }
         if (saveToStorage) {
@@ -227,9 +230,9 @@ export class TaskManager {
                 instancesToSave.push(instance.toJSON());
             });
         });
-        await this.plugin.saveData({ 
+        await this.plugin.saveData({
             lastRunTime: this.lastRunTime.toISOString(),
-            repeatingTaskInstances: instancesToSave 
+            repeatingTaskInstances: instancesToSave
         });
     }
 
@@ -315,12 +318,16 @@ export class TaskManager {
         Notificator.debug(`Обновление статусов инстансов задач.`);
         let hasChanges = false;
 
+        
         // Обработка будущих инстансов, которые должны стать активными
         let lastInstanceIsStarted = true;
         this.futureInstances.traverseInOrder(
             (node: BinarySearchTreeNode<TaskInstance>) => {
                 let instance = node.getValue();
-                if (instance.isStarted()) {
+                if (instance.isOverdue()) {
+                    this.markTask(instance, 'skipped', false);
+                    hasChanges = true;
+                } else if (instance.isStarted()) {
                     this.markTask(instance, "pending", false);
                     hasChanges = true;
                 } else {
@@ -331,7 +338,7 @@ export class TaskManager {
                 return !lastInstanceIsStarted;
             }
         );
-        
+
         // Обработка активных инстансов
         let lastInstanceIsOverdue = true;
         this.activeInstances.traverseInOrder(

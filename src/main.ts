@@ -8,42 +8,16 @@ import * as moment from 'moment';
 export default class ReTaskPlugin extends Plugin {
   // Папка с файлами задач (относительно корня vault)
   taskFolder: string = "RepeatingTasks";
-  taskManager: TaskManager = new TaskManager(this.app, this);
+  taskManager: TaskManager;
 
-  async onload() {
+  timeoutId: number;
+
+  onload() {
     Notificator.setDebugMode(true);
-
     Notificator.debug("Загрузка плагина Повторяющихся Задач");
-    Notificator.debug('TaskManager instance:', this.taskManager);
-
-    await this.taskManager.loadTasks();
-
-    // Устанавливаем интервал для обновления инстансов задач
-    // Используем значение из TaskManager для согласованности
-    this.registerInterval(
-      window.setInterval(
-        () => this.taskManager.updateAllTaskInstances(),
-        this.taskManager.getUpdateTaskFrequencyMinutes() * 60 * 1000
-      )
-    );
-    
-    const now = new Date();
-    const secondsPast = now.getSeconds() + now.getMilliseconds() / 1000; // Текущие секунды с миллисекундами
-    const delayToNextMinute = (60 - secondsPast) * 1000; // Миллисекунды до следующей минуты
-    // Первый запуск с выравниванием
-    window.setTimeout(() => {
-      this.taskManager.updateInstanceStatuses();
-      // Запускаем интервал для последующих выполнений
-      this.registerInterval(
-        window.setInterval(() => {
-          this.taskManager.updateInstanceStatuses();
-        }, 60000) // Каждые 60 секунд
-      );
-    }, delayToNextMinute);
 
     // Регистрируем кастомное вью
     this.registerView(VIEW_TYPE_REPEATING_TASKS, (leaf) => new RepeatingTasksView(leaf, this.taskManager));
-
     // Регистрируем команду для открытия вью
     this.addCommand({
       id: 'open-retask-view',
@@ -58,14 +32,47 @@ export default class ReTaskPlugin extends Plugin {
       this.activateView();
     });
 
-    this.activateView();
+    this.taskManager = new TaskManager(this.app, this);
+
+    Notificator.debug('TaskManager instance:', this.taskManager);
+
+    // Ждём полной готовности
+    this.app.workspace.onLayoutReady(() => {
+      this.taskManager.loadTasks();
+
+      // Устанавливаем интервал для обновления инстансов задач
+      // Используем значение из TaskManager для согласованности
+      this.registerInterval(
+        window.setInterval(
+          () => this.taskManager.updateAllTaskInstances(),
+          this.taskManager.getUpdateTaskFrequencyMinutes() * 60 * 1000
+        )
+      );
+
+      const now = new Date();
+      const secondsPast = now.getSeconds() + now.getMilliseconds() / 1000; // Текущие секунды с миллисекундами
+      const delayToNextMinute = (60 - secondsPast) * 1000; // Миллисекунды до следующей минуты
+      // Первый запуск с выравниванием
+      this.timeoutId = window.setTimeout(() => {
+        this.taskManager.updateInstanceStatuses();
+        // Запускаем интервал для последующих выполнений
+        this.registerInterval(
+          window.setInterval(() => {
+            this.taskManager.updateInstanceStatuses();
+          }, 60000) // Каждые 60 секунд
+        );
+      }, delayToNextMinute);
+
+      this.activateView();
+    });
   }
 
-  async onunload() {
+  onunload() {
     Notificator.debug("Выгрузка плагина Повторяющихся Задач");
 
+    window.clearTimeout(this.timeoutId);
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_REPEATING_TASKS);
-    await this.taskManager.onunload();
+    this.taskManager.onunload();
     //временный сброс данных при разработке плагина. обязательно убрать в релизе.
     this.taskManager.clearStorage();
   }
