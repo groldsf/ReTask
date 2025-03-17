@@ -1,10 +1,10 @@
-import { App, Plugin, TFile } from 'obsidian';
-import { RepeatingTask, TaskInstance, getEndDate } from "../models/RepeatingTask";
-import { TaskParser } from './TaskParser';
-import { Notificator } from './Notificator';
-import { BinarySearchTree, BinarySearchTreeNode } from '@datastructures-js/binary-search-tree';
-import { TaskScheduler } from './TaskScheduler';
+import { BinarySearchTree } from '@datastructures-js/binary-search-tree';
+import { App, TFile } from 'obsidian';
 import ReTaskPlugin from 'src/main';
+import { RepeatingTask, TaskInstance, getEndDate } from "../models/RepeatingTask";
+import { Notificator } from './Notificator';
+import { TaskParser } from './TaskParser';
+import { TaskScheduler } from './TaskScheduler';
 
 interface StoredTaskInstance {
     id: string;
@@ -112,10 +112,12 @@ export class TaskManager {
                         task.instances.push(instance);
 
                         // Распределяем по коллекциям в зависимости от статуса
-                        if (instance.status === 'not_started') {
+                        if (instance.getStatus() === 'not_started') {
                             this.futureInstances.insert(instance);
-                        } else if (instance.status === 'pending') {
+                        } else if (instance.getStatus() === 'pending') {
                             this.activeInstances.insert(instance);
+                        } else {
+                            Notificator.error(`wrong instans status`, instance);
                         }
 
                         hasChanges = true;
@@ -199,13 +201,13 @@ export class TaskManager {
     /**
      * Отмечает инстанс задачи заданным статусом и обновляет хранилище.
      * @param taskInstance - Инстанс, который нужно отметить.
-     * @param status - Новый статус ("pending", "done", "canceled", "skipped").
+     * @param status - Новый статус ("not_started", "pending", "done", "canceled", "skipped").
      */
-    async markTask(taskInstance: TaskInstance, status: "pending" | "done" | "canceled" | "skipped", saveToStorage: Boolean = true): Promise<void> {
-        const oldStatus = taskInstance.status;
+    async markTask(taskInstance: TaskInstance, status: "not_started" | "pending" | "done" | "canceled" | "skipped", saveToStorage: Boolean = true): Promise<void> {
+        const oldStatus = taskInstance.getStatus();
         taskInstance.setStatus(status);
 
-        if (oldStatus === 'not_started') {
+        if (oldStatus === 'not_started' && status !== 'not_started') {
             this.futureInstances.remove(taskInstance);
         }
         if (oldStatus === 'pending' && status !== 'pending') {
@@ -213,6 +215,9 @@ export class TaskManager {
         }
         if (status === 'pending') {
             this.activeInstances.insert(taskInstance);
+        }
+        if (status === 'not_started') {
+            this.futureInstances.insert(taskInstance);
         }
         if (saveToStorage) {
             await this.saveInstancesToStorage();
@@ -242,7 +247,10 @@ export class TaskManager {
      */
     async loadInstancesFromStorageToTask(): Promise<void> {
         const data = await this.plugin.loadData();
-        if (!data || !data.repeatingTaskInstances) return;
+        if (!data || !data.repeatingTaskInstances) {
+            Notificator.debug(`Загруженно 0 инстансов!`);
+            return;
+        }
 
         const instances = data.repeatingTaskInstances as StoredTaskInstance[];
         instances.forEach((storedInstance: StoredTaskInstance) => {
@@ -252,12 +260,13 @@ export class TaskManager {
             const instance = TaskInstance.fromJSON(storedInstance, task);
             task.instances.push(instance);
             this.allInstances.set(instance.id, instance); // Добавляем в allInstances
-            if (instance.status === "pending") {
+            if (instance.getStatus() === "pending") {
                 this.activeInstances.insert(instance);
-            } else if (instance.status === "not_started") {
+            } else if (instance.getStatus() === "not_started") {
                 this.futureInstances.insert(instance);
             }
         });
+        Notificator.debug(`Загруженно ${instances.length} инстансов!`);
     }
 
     /**
@@ -318,53 +327,79 @@ export class TaskManager {
         Notificator.debug(`Обновление статусов инстансов задач.`);
         let hasChanges = false;
 
-        
+        if (this.futureInstances.count() > 0) {
+            Notificator.debug('min futureInstances in start ', this.futureInstances.min().getValue());
+        }
         // Обработка будущих инстансов, которые должны стать активными
-        let lastInstanceIsStarted = true;
-        this.futureInstances.traverseInOrder(
-            (node: BinarySearchTreeNode<TaskInstance>) => {
-                let instance = node.getValue();
+        while (this.futureInstances.count() > 0) {
+            let instance = this.futureInstances.min().getValue();
+            
+            // Проверяем, наступило ли время начала инстанса
+            if (instance.isStarted()) {
                 if (instance.isOverdue()) {
-                    this.markTask(instance, 'skipped', false);
-                    hasChanges = true;
-                } else if (instance.isStarted()) {
-                    this.markTask(instance, "pending", false);
-                    hasChanges = true;
+                    // Если инстанс уже просрочен, отмечаем его как пропущенный
+                    await this.markTask(instance, 'skipped', false);
                 } else {
-                    lastInstanceIsStarted = false;
+                    // Если инстанс начался, но не просрочен, отмечаем его как ожидающий
+                    await this.markTask(instance, "pending", false);
                 }
-            },
-            () => {
-                return !lastInstanceIsStarted;
+                hasChanges = true;
+            } else {
+                // Если время инстанса еще не наступило, прерываем цикл
+                break;
             }
-        );
+        }
+
+        if (this.futureInstances.count() > 0) {
+            Notificator.debug('min futureInstances after ', this.futureInstances.min().getValue());
+        } else {
+            Notificator.debug('futureInstances after empty.');
+        }
+
+
+
+        if (Notificator.debugMode) {
+            const instancesToProcess: TaskInstance[] = [];
+            this.futureInstances.traverseInOrder((node) => {
+                const instance = node.getValue();
+                if (instance.isStarted()) {
+                    instancesToProcess.push(instance);
+                }
+            });
+
+            if (instancesToProcess.length !== 0) {
+                Notificator.error("bad instances in futureInstances", instancesToProcess);
+            }
+
+            let arr: TaskInstance[] = [];
+            this.futureInstances.traverseInOrder((node) => arr.push(node.getValue()));
+            Notificator.debug('futureInstances:', arr);
+        }
+
+
 
         // Обработка активных инстансов
-        let lastInstanceIsOverdue = true;
-        this.activeInstances.traverseInOrder(
-            (node: BinarySearchTreeNode<TaskInstance>) => {
-                let instance = node.getValue();
-                if (instance.status !== "pending") {
-                    lastInstanceIsOverdue = false;
-                    return;
-                }
-                // Проверяем, не просрочен ли инстанс
-                if (instance.isOverdue()) {
-                    this.markTask(instance, "skipped", false);
-                    hasChanges = true;
-                }
-            },
-            () => {
-                return !lastInstanceIsOverdue;
+        while (this.activeInstances.count() > 0) {
+            let instance = this.activeInstances.min().getValue();
+            if (instance.getStatus() !== 'pending') {
+                this.activeInstances.remove(instance);
+                Notificator.warn('Not pending taskInstance in active queue', instance);
+                hasChanges = true;
             }
-        );
+            if (instance.isOverdue()) {
+                await this.markTask(instance, 'skipped', false);
+                hasChanges = true;
+            } else {
+                break;
+            }
+        }
         // Сохраняем изменения, если были
         if (hasChanges && saveToStorage) {
             await this.saveInstancesToStorage();
         }
         if (hasChanges) {
             Notificator.debug(`Обновлены статусы инстансов задач.`);
-            this.plugin.updateView();
+            await this.plugin.updateView();
         }
     }
 

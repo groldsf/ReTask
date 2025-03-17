@@ -1,8 +1,13 @@
 import { Plugin } from 'obsidian';
-import { VIEW_TYPE_REPEATING_TASKS, RepeatingTasksView } from './views/RepeatingTasksView';
+import { Notificator } from './services/Notificator';
 import { TaskManager } from './services/TaskManager';
-import { Notificator } from './services/Notificator'
-import * as moment from 'moment';
+import { RepeatingTasksView, VIEW_TYPE_REPEATING_TASKS } from './views/RepeatingTasksView';
+
+declare global {
+  var taskManager: TaskManager;
+}
+
+
 
 // Основной класс плагина
 export default class ReTaskPlugin extends Plugin {
@@ -33,18 +38,20 @@ export default class ReTaskPlugin extends Plugin {
     });
 
     this.taskManager = new TaskManager(this.app, this);
+    global.taskManager = this.taskManager;
 
     Notificator.debug('TaskManager instance:', this.taskManager);
 
     // Ждём полной готовности
-    this.app.workspace.onLayoutReady(() => {
-      this.taskManager.loadTasks();
+    this.app.workspace.onLayoutReady(async () => {
+      await this.taskManager.loadTasks();
+      await this.taskManager.updateInstanceStatuses();
 
       // Устанавливаем интервал для обновления инстансов задач
       // Используем значение из TaskManager для согласованности
       this.registerInterval(
         window.setInterval(
-          () => this.taskManager.updateAllTaskInstances(),
+          async () => await this.taskManager.updateAllTaskInstances(),
           this.taskManager.getUpdateTaskFrequencyMinutes() * 60 * 1000
         )
       );
@@ -53,12 +60,12 @@ export default class ReTaskPlugin extends Plugin {
       const secondsPast = now.getSeconds() + now.getMilliseconds() / 1000; // Текущие секунды с миллисекундами
       const delayToNextMinute = (60 - secondsPast) * 1000; // Миллисекунды до следующей минуты
       // Первый запуск с выравниванием
-      this.timeoutId = window.setTimeout(() => {
-        this.taskManager.updateInstanceStatuses();
+      this.timeoutId = window.setTimeout(async () => {
+        await this.taskManager.updateInstanceStatuses();
         // Запускаем интервал для последующих выполнений
         this.registerInterval(
-          window.setInterval(() => {
-            this.taskManager.updateInstanceStatuses();
+          window.setInterval(async () => {
+            await this.taskManager.updateInstanceStatuses();
           }, 60000) // Каждые 60 секунд
         );
       }, delayToNextMinute);
@@ -67,14 +74,14 @@ export default class ReTaskPlugin extends Plugin {
     });
   }
 
-  onunload() {
+  async onunload() {
     Notificator.debug("Выгрузка плагина Повторяющихся Задач");
 
     window.clearTimeout(this.timeoutId);
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_REPEATING_TASKS);
-    this.taskManager.onunload();
+    await this.taskManager.onunload();
     //временный сброс данных при разработке плагина. обязательно убрать в релизе.
-    this.taskManager.clearStorage();
+    await this.taskManager.clearStorage();
   }
 
   // Активация вью (открытие панели с задачами)

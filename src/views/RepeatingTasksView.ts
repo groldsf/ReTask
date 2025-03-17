@@ -185,7 +185,7 @@ export class RepeatingTasksView extends ItemView {
         
         // Применяем фильтр по статусу
         if (this.filterStatus !== 'all') {
-            filteredInstances = filteredInstances.filter(task => task.status === this.filterStatus);
+            filteredInstances = filteredInstances.filter(task => task.getStatus() === this.filterStatus);
         }
         
         // Применяем фильтр по имени
@@ -364,8 +364,8 @@ export class RepeatingTasksView extends ItemView {
         // Статус задачи
         const taskStatusEl = instanceEl.createDiv({ cls: 'task-status' });
         taskStatusEl.createEl('span', { 
-            text: `Состояние: ${taskInstance.status.toUpperCase()}`, 
-            cls: `task-state-${taskInstance.status.toLowerCase()}` 
+            text: `Состояние: ${taskInstance.getStatus().toUpperCase()}`, 
+            cls: `task-state-${taskInstance.getStatus().toLowerCase()}` 
         });
 
         // Статус просрочки
@@ -374,6 +374,16 @@ export class RepeatingTasksView extends ItemView {
         overdueStatusEl.createEl('span', { 
             text: `Просрочка: ${overdueStatus.toUpperCase()}`, 
             cls: `status-${overdueStatus}` 
+        });
+
+        
+        const isStartedEl = instanceEl.createDiv();
+        isStartedEl.createEl('span', { 
+            text: `isStarted: ${taskInstance.isStarted()}`
+        });
+        const isOverdueEl = instanceEl.createDiv();
+        isOverdueEl.createEl('span', { 
+            text: `isOverdue: ${taskInstance.isOverdue()}`
         });
 
         const buttonContainer = instanceEl.createDiv({ cls: 'task-actions' });

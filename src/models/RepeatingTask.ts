@@ -24,20 +24,20 @@ export interface RepeatingTask {
 }
 
 export interface SerializedTaskInstance {
-    id: string;
-    taskId: string;
-    activePeriod: {
-        start: string;
-        end: string;
-    };
-    status: "not_started" | "pending" | "done" | "canceled" | "skipped";
+	id: string;
+	taskId: string;
+	activePeriod: {
+		start: string;
+		end: string;
+	};
+	status: "not_started" | "pending" | "done" | "canceled" | "skipped";
 }
 
 export class TaskInstance {
 	id: string;
 	task: RepeatingTask;
 	activePeriod: { start: Date; end: Date };
-	status: "not_started" | "pending" | "done" | "canceled" | "skipped";
+	private status: "not_started" | "pending" | "done" | "canceled" | "skipped";
 
 	constructor(id: string, task: RepeatingTask, activePeriod: { start: Date; end: Date }) {
 		this.id = id;
@@ -76,9 +76,13 @@ export class TaskInstance {
 		return new Date() > this.activePeriod.end;
 	}
 
-	setStatus(status: this['status']): this {
+	setStatus(status: "not_started" | "pending" | "done" | "canceled" | "skipped"): this {
 		this.status = status;
 		return this;
+	}
+
+	getStatus(): "not_started" | "pending" | "done" | "canceled" | "skipped" {
+		return this.status;
 	}
 }
 

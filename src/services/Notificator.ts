@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 
 export class Notificator {
-    private static debugMode: boolean = false;
+    static debugMode: boolean = false;
 
     static setDebugMode(enabled: boolean) {
         this.debugMode = enabled;
