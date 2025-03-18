@@ -23,6 +23,7 @@
 	},
 	"dependencies": {
 		"@datastructures-js/binary-search-tree": "^5.3.2",
+		"async-mutex": "^0.5.0",
 		"cron-parser": "^5.0.4"
 	}
 }

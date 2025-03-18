@@ -39,7 +39,7 @@ export class TaskScheduler {
         
         // Создаем инстансы для каждой даты
         for (const date of scheduleDates) {
-            const instance = this.createTaskInstance(task, date);
+            const instance = TaskInstance.fromTask(task, date);
             instances.push(instance);
         }
         
@@ -61,8 +61,8 @@ export class TaskScheduler {
             return new Date(lastInstance.activePeriod.start.getTime() + 1000);
         }
         
-        // Если инстансов нет, начинаем с даты начала задачи или последнего запуска
-        return new Date(Math.max(task.startTime.getTime(), lastRunTime.getTime()));
+        // Если инстансов нет, начинаем с даты начала задачи
+        return new Date(task.startTime.getTime());
     }
     
     /**
@@ -84,21 +84,6 @@ export class TaskScheduler {
         }
         
         return dates;
-    }
-    
-    /**
-     * Создает инстанс задачи на основе даты запуска
-     */
-    private createTaskInstance(task: RepeatingTask, startDate: Date): TaskInstance {
-        const id = `${task.id}-${startDate.getTime()}`;
-        return new TaskInstance(
-            id,
-            task,
-            {
-                start: startDate,
-                end: getEndDate(startDate, task.duration)
-            }
-        );
     }
     
     /**

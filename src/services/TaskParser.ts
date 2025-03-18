@@ -1,6 +1,6 @@
-import { RepeatingTask, TaskInstance, Duration, getEndDate, Schedule } from "../models/RepeatingTask";
-import { CachedMetadata, TFile } from "obsidian";
 import cronParser from 'cron-parser';
+import { CachedMetadata, TFile } from "obsidian";
+import { Duration, RepeatingTask, Schedule } from "../models/RepeatingTask";
 import { Notificator } from "./Notificator";
 
 type PresetSchedule = 'daily' | 'weekly' | 'monthly';
@@ -53,12 +53,12 @@ export class TaskParser {
     private parseSchedule(rawSchedule: PresetSchedule | CronSchedule | IntervalSchedule): Schedule {
         if (typeof rawSchedule === 'string') {
             if (['daily', 'weekly', 'monthly'].includes(rawSchedule)) {
-                Notificator.debug(`Parsed as preset: ${rawSchedule}`);
+                // Notificator.debug(`Parsed as preset: ${rawSchedule}`);
                 return { type: 'preset', value: rawSchedule };
             } else if (/^\d+\s+\d+\s+[\d*]+\s+[\d*]+\s+[\d*]+$/.test(rawSchedule)) {
                 try {
                     cronParser.parse(rawSchedule, { tz: 'UTC' });
-                    Notificator.debug(`Parsed as cron: ${rawSchedule}`);
+                    // Notificator.debug(`Parsed as cron: ${rawSchedule}`);
                     return { type: 'cron', value: rawSchedule };
                 } catch {
                     throw new Error(`Invalid cron schedule: ${rawSchedule}`);

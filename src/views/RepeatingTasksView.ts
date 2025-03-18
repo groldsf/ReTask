@@ -369,7 +369,7 @@ export class RepeatingTasksView extends ItemView {
         });
 
         // Статус просрочки
-        const overdueStatus = this.taskManager.computeOverdueStatus(taskInstance);
+        const overdueStatus = taskInstance.getOverdueStatus();
         const overdueStatusEl = instanceEl.createDiv({ cls: 'task-status' });
         overdueStatusEl.createEl('span', { 
             text: `Просрочка: ${overdueStatus.toUpperCase()}`, 

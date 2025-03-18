@@ -45,6 +45,24 @@ export class TaskInstance {
 		this.activePeriod = activePeriod;
 		this.status = "not_started"; // По умолчанию
 	}
+
+	/**
+	* Создает новый экземпляр задачи на основе начальной даты.
+	* @param task - Задача, для которой создается инстанс.
+	* @param startDate - Дата начала инстанса.
+	* @returns Новый TaskInstance с уникальным ID и вычисленным периодом активности.
+	*/
+	static fromTask(task: RepeatingTask, startDate: Date): TaskInstance {
+		return new TaskInstance(
+			`${task.id}-${startDate.getTime()}`,
+			task,
+			{
+				start: startDate,
+				end: getEndDate(startDate, task.duration)
+			}
+		);
+	}
+
 	toJSON(): SerializedTaskInstance {
 		return {
 			id: this.id,
@@ -83,6 +101,24 @@ export class TaskInstance {
 
 	getStatus(): "not_started" | "pending" | "done" | "canceled" | "skipped" {
 		return this.status;
+	}
+
+	/**
+	 * Вычисляет статус просрочки инстанса на основе текущего времени и порогов.
+	 * @returns Статус просрочки ("green", "yellow", "red", "black").
+	 */
+	getOverdueStatus(): "green" | "yellow" | "red" | "black" {
+		const now = new Date().getTime();
+		const end = this.activePeriod.end.getTime();
+		const diff = now - end;
+
+		const thresholds = this.task.overdueThresholds;
+
+		if (diff <= 0) return "green";
+		if (diff <= thresholds.green * 60 * 1000) return "green";
+		if (diff <= thresholds.yellow * 60 * 1000) return "yellow";
+		if (diff <= thresholds.red * 60 * 1000) return "red";
+		return "black";
 	}
 }
 

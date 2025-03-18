@@ -17,7 +17,7 @@ export default class ReTaskPlugin extends Plugin {
 
   timeoutId: number;
 
-  onload() {
+  async onload() {
     Notificator.setDebugMode(true);
     Notificator.debug("Загрузка плагина Повторяющихся Задач");
 
@@ -38,20 +38,24 @@ export default class ReTaskPlugin extends Plugin {
     });
 
     this.taskManager = new TaskManager(this.app, this);
+
+    //debug
     global.taskManager = this.taskManager;
+    await taskManager.clearStorage();
+
 
     Notificator.debug('TaskManager instance:', this.taskManager);
 
     // Ждём полной готовности
     this.app.workspace.onLayoutReady(async () => {
       await this.taskManager.loadTasks();
-      await this.taskManager.updateInstanceStatuses();
+      await this.taskManager.publicUpdateAllTaskInstances();
 
       // Устанавливаем интервал для обновления инстансов задач
       // Используем значение из TaskManager для согласованности
       this.registerInterval(
         window.setInterval(
-          async () => await this.taskManager.updateAllTaskInstances(),
+          async () => await this.taskManager.publicUpdateAllTaskInstances(),
           this.taskManager.getUpdateTaskFrequencyMinutes() * 60 * 1000
         )
       );
@@ -61,11 +65,11 @@ export default class ReTaskPlugin extends Plugin {
       const delayToNextMinute = (60 - secondsPast) * 1000; // Миллисекунды до следующей минуты
       // Первый запуск с выравниванием
       this.timeoutId = window.setTimeout(async () => {
-        await this.taskManager.updateInstanceStatuses();
+        await this.taskManager.publicUpdateInstanceStatuses();
         // Запускаем интервал для последующих выполнений
         this.registerInterval(
           window.setInterval(async () => {
-            await this.taskManager.updateInstanceStatuses();
+            await this.taskManager.publicUpdateInstanceStatuses();
           }, 60000) // Каждые 60 секунд
         );
       }, delayToNextMinute);
